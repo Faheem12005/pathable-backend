@@ -12,11 +12,12 @@ from app.schemas.user import (
     UserRegisterRequest, 
     UserResponse, 
     DailyRequestCreate,
+    DailyRequestUpdate,
     DailyRequestResponse,
     AllocationStatusResponse,
     Location
 )
-from app.db.lockUtils import isLocked
+from app.db.lockUtils import isLocked, isDateLocked
 
 router = APIRouter(prefix="/user", tags=["User"])
 
@@ -298,4 +299,123 @@ def getAllocationStatus(userId: str, date: str, db: Session = Depends(getDb)):
         date=date,
         status=request.status,
         message="Could not allocate seat. All buses full or no suitable route."
+    )
+
+
+# ============================================
+# GET SPECIFIC DAILY REQUEST
+# ============================================
+
+@router.get("/{userId}/request/{date}", response_model=DailyRequestResponse)
+def getDailyRequest(userId: str, date: str, db: Session = Depends(getDb)):
+    """
+    Get the daily request for a specific date.
+    
+    This shows what the system auto-created (from defaults) or what the user modified.
+    Frontend calls this to see if a request already exists before showing modify UI.
+    """
+    requestDate = datetime.strptime(date, "%Y-%m-%d").date()
+    
+    request = db.query(DailyRequest).filter(
+        DailyRequest.user_id == userId,
+        DailyRequest.date == requestDate
+    ).first()
+
+    if not request:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"No request found for {date}. System will auto-create at 10 PM if this is a default day."
+        )
+
+    return DailyRequestResponse(
+        id=str(request.id),
+        date=str(request.date),
+        location=Location(lat=request.request_lat, lng=request.request_lng),
+        isDefaultDay=request.is_default_day,
+        isModified=request.is_modified,
+        status=request.status,
+        allocatedBusId=str(request.allocated_bus_id) if request.allocated_bus_id else None,
+        allocatedSeatId=str(request.allocated_seat_id) if request.allocated_seat_id else None
+    )
+
+
+# ============================================
+# UPDATE DAILY REQUEST (Frontend Modification)
+# ============================================
+
+@router.put("/{userId}/request/{date}", response_model=DailyRequestResponse)
+def updateDailyRequest(
+    userId: str, 
+    date: str, 
+    request: DailyRequestUpdate,
+    db: Session = Depends(getDb)
+):
+    """
+    Update the location for a daily request (before 10 PM deadline).
+    
+    Flow:
+    1. System auto-creates requests at 10 PM (from user defaults)
+    2. User views their request for tomorrow
+    3. User modifies location via this endpoint
+    4. Location updated, is_modified flag set to True (affects priority)
+    5. At 10 PM next day, system locks the date and runs allocation
+    """
+    requestDate = datetime.strptime(date, "%Y-%m-%d").date()
+    
+    # Check if date is locked
+    if isDateLocked(db, requestDate):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot modify request for {date}. Deadline passed (10 PM the day before)."
+        )
+    
+    # Find existing request
+    existing = db.query(DailyRequest).filter(
+        DailyRequest.user_id == userId,
+        DailyRequest.date == requestDate
+    ).first()
+    
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No request found for {date}. Cannot modify a non-existent request."
+        )
+    
+    # Check if already allocated
+    if existing.status == "ALLOCATED":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot modify an already allocated request."
+        )
+    
+    # Get user to check if location changed from default
+    user = db.query(User).filter(User.id == userId).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Update location
+    existing.request_lat = request.location.lat
+    existing.request_lng = request.location.lng
+    
+    # Mark as modified if location differs from user's default home
+    locationChanged = (
+        abs(request.location.lat - user.home_lat) > 0.0001 or 
+        abs(request.location.lng - user.home_lng) > 0.0001
+    )
+    
+    if locationChanged:
+        existing.is_modified = True  # This lowers priority to MEDIUM
+    
+    db.commit()
+    db.refresh(existing)
+    
+    return DailyRequestResponse(
+        id=str(existing.id),
+        date=str(existing.date),
+        location=Location(lat=existing.request_lat, lng=existing.request_lng),
+        isDefaultDay=existing.is_default_day,
+        isModified=existing.is_modified,
+        status=existing.status,
+        allocatedBusId=str(existing.allocated_bus_id) if existing.allocated_bus_id else None,
+        allocatedSeatId=str(existing.allocated_seat_id) if existing.allocated_seat_id else None
     )

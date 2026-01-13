@@ -60,6 +60,18 @@ class DailyRequestCreate(BaseModel):
         }
 
 
+class DailyRequestUpdate(BaseModel):
+    """Update location for an existing daily request"""
+    location: Location
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "location": {"lat": 12.82, "lng": 80.24}
+            }
+        }
+
+
 class DailyRequestResponse(BaseModel):
     id: str
     date: str

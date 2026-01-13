@@ -1,0 +1,5 @@
+                  id                  |  run_date  |        executed_at         |  status   | total_requests | groups_allocated | high_priority_allocated | medium_priority_allocated | low_priority_allocated | failed_allocations 
+--------------------------------------+------------+----------------------------+-----------+----------------+------------------+-------------------------+---------------------------+------------------------+--------------------
+ 00f76852-d311-45ff-8c6b-9c8ee6112034 | 2026-01-14 | 2026-01-13 09:19:25.211633 | COMPLETED |              1 |                1 |                       0 |                         0 |                      0 |                  0
+(1 row)
+
