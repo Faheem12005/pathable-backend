@@ -6,3 +6,4 @@ from .booking import Booking
 from .group import Group
 from .groupMember import GroupMember
 from .dailyLock import DailyLock
+from .dailyRequest import DailyRequest

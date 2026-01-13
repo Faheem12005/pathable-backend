@@ -1,12 +1,12 @@
 import sys
 import os
 
-from app.routes import booking
 sys.path.append(os.path.abspath(os.path.join(os.getcwd())))
 from app.db.database import Base
-target_metadata = Base.metadata
 from app.models import user, route, bus, seat
 from app.models import group, groupMember
+from app.routes import booking
+target_metadata = Base.metadata
 
 
 
